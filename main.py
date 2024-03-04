@@ -5,6 +5,7 @@ from collections import defaultdict
 import os
 import re
 
+
 months = {
     1: 'Январь',
     2: 'Февраль',
@@ -97,18 +98,26 @@ class ReportCreater:
         for row_numb in range(2, sheet.max_row + 1):
             route = sheet[f'B{row_numb}'].value
             date_str = sheet[f'A{row_numb}'].value
-            date_ = datetime.strptime(date_str, '%d.%m.%Y')
+            date_ = datetime.strptime(date_str, '%d.%m.%Y') if type(date_str) == str else date_str
+            old_values = (sheet[f'C{row_numb}'].value, sheet[f'D{row_numb}'].value,
+                          sheet[f'E{row_numb}'].value)
             values = (self.dict_organizer[route][date_]['plan'], self.dict_organizer[route][date_]['fact'],
                       self.dict_axapta[route][date_],
                       )
             sheet[f'C{row_numb}'].value = values[0]
             sheet[f'D{row_numb}'].value = values[1]
             sheet[f'E{row_numb}'].value = values[2]
-            if values[1] < values[2] and values[0] + values[1] != 0:
+            if self.check_difference(values):
                 self.color_cells(sheet, row_numb)
+            if self.check_difference(old_values) and not self.check_difference(values):
+                self.color_cells(sheet, row_numb, color=False)
             for problem in self.dict_organizer[route][date_]:
                 if problem in self.problems:
                     sheet[f'{self.problems[problem]}{row_numb}'] = self.dict_organizer[route][date_][problem]
+
+    @staticmethod
+    def check_difference(values):
+        return values[1] < values[2] and values[0] + values[1] != 0
 
     def get_organizer_data(self):
         """Получает данные из актов организатора"""
@@ -134,9 +143,13 @@ class ReportCreater:
         print('Все акты проверены!')
 
     @staticmethod
-    def color_cells(sheet, row):
+    def color_cells(sheet, row, color=True):
         """Окрашивает диапазон ячеек"""
-        filling = PatternFill(fill_type='solid', fgColor='F4A460')
+        if color:
+            filling = PatternFill(fill_type='solid', fgColor='F4A460')
+        else:
+            filling = PatternFill(fill_type='none')
+
         for cell in sheet[f'A{row}': f'E{row}'][0]:
             cell.fill = filling
 
@@ -200,4 +213,5 @@ try:
     rep.get_organizer_data()
     rep.write_data()
 except Exception as err:
-    raise err
+    print(err)
+    input()
