@@ -109,7 +109,7 @@ class ReportCreater:
                           self.dict_axapta[route][date_]['plan_routes'], self.dict_organizer[route][date_]['fact'],
                           self.dict_axapta[route][date_]['fact_routes'],
                           )
-                sheet.append()
+                sheet.append(values)
                 if values[4] < values[5] and values[2] + values[4] != 0:
                     self.color_cells(sheet, row_numb)
                 for problem in self.dict_organizer[route][date_]:
