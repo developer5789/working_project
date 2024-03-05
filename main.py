@@ -4,8 +4,9 @@ from datetime import datetime
 from collections import defaultdict
 import os
 import re
+import json
 
-
+routes = []
 months = {
     1: 'Январь',
     2: 'Февраль',
@@ -26,31 +27,52 @@ class ReportCreater:
 
     def __init__(self, report_path):
         self.report_path = report_path
-        self.dict_axapta = defaultdict(lambda: defaultdict(int))
+        self.dict_axapta = defaultdict(lambda: defaultdict(dict))
         self.dict_organizer = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         self.period = None
-        self.problems = {'БО': 'K', 'Несоблюдение трассы маршрута': 'O', 'Пропуск остановочных пунктов': 'P',
-                         'Несоблюдение времени отправления от начальных/и или конечных пунктов': 'S',
-                         'Несоблюдение времени начала/окончания движения': 'Q', 'ДТП': 'J', 'Т': 'F',
-                         'Э': 'G', 'Проезд ОП (>20%)': 'R', 'Задержка в пути': 'I', 'Прочее': 'H', 'Трасса (>20%)': 'T'
+        self.problems = {'БО': 'L', 'Несоблюдение трассы маршрута': 'P', 'Пропуск остановочных пунктов': 'Q',
+                         'Несоблюдение времени отправления от начальных/и или конечных пунктов': 'T',
+                         'Несоблюдение времени начала/окончания движения': 'R', 'ДТП': 'K', 'Т': 'G',
+                         'Э': 'H', 'Проезд ОП (>20%)': 'S', 'Задержка в пути': 'J', 'Прочее': 'I', 'Трасса (>20%)': 'U'
                          }
-        self.columns = ('Дата', 'Маршрут', 'План', 'Факт ОРГП', 'Факт ВС', 'T', 'Э', 'Прочее', 'Задержки в пути',
+        self.columns = ('Дата', 'Маршрут', 'План ОП', 'План наш', 'Факт ОРГП', 'Факт ВС', 'T', 'Э', 'Прочее', 'Задержки в пути',
                         'ДТП', 'БО', 'Зачтено БО', 'Не зачтено БО', 'Примечания', 'Несобл трассы', 'Пропуск ОП',
                         'Несобл нач/оконч', 'Проезд ОП (>20%)', 'Несобл времени отпр', 'Трасса (>20%)')
+        self.get_routes()
 
-    def read_axapta_report(self):
-        """Считывает данные отчета по тр и заполняет словарь 'dict_axapta'"""
+    # def read_axapta_report(self):
+    #     """Считывает данные отчета по тр и заполняет словарь 'dict_axapta'"""
+    #
+    #     print('Считываем данные из отчёта по транспортной работе...')
+    #     wb = openpyxl.load_workbook(self.report_path)
+    #     sheet = wb.active
+    #     for row in sheet.values:
+    #         if type(row[0]) == datetime:
+    #             if self.period is None:
+    #                 self.period = (row[0].year, row[0].month)
+    #             date_, route, flights = row[0], row[2], int(row[8])
+    #             self.dict_axapta[route][date_] += flights
+    #     print('Данные из отчёта по транспортной работе получены!')
 
-        print('Считываем данные из отчёта по транспортной работе...')
+    def read_tw_report(self):
+        """ Читает отчет по транспортной работе и заполняет словарь self.dict_axapta """
+
+        print('Читаем "отчёт по ТР.xlsx"....')
         wb = openpyxl.load_workbook(self.report_path)
-        sheet = wb.active
+        sheet = wb['Осн']
+
         for row in sheet.values:
-            if type(row[0]) == datetime:
+            date, route = row[0], row[4],
+            if type(date) == datetime and route in routes:
                 if self.period is None:
-                    self.period = (row[0].year, row[0].month)
-                date_, route, flights = row[0], row[2], int(row[8])
-                self.dict_axapta[route][date_] += flights
-        print('Данные из отчёта по транспортной работе получены!')
+                    self.period = (date.year, date.month)
+
+                self.dict_axapta[route][date] = {
+                                                'plan_routes': row[9],
+                                                'fact_routes': row[10],
+                                                }
+
+        print('Отчёт по ТР.xlsx прочитан!')
 
     def gen_dates(self):
         """Функция-генератор дат"""
@@ -84,29 +106,32 @@ class ReportCreater:
             for date_ in self.gen_dates():
                 row_numb += 1
                 values = (date_.strftime('%d.%m.%Y'), route, self.dict_organizer[route][date_]['plan'],
-                          self.dict_organizer[route][date_]['fact'], self.dict_axapta[route][date_],
+                          self.dict_axapta[route][date_]['plan_routes'], self.dict_organizer[route][date_]['fact'],
+                          self.dict_axapta[route][date_]['fact_routes'],
                           )
-                sheet.append(values)
-                if values[3] < values[4] and values[2] + values[3] != 0:
+                sheet.append()
+                if values[4] < values[5] and values[2] + values[4] != 0:
                     self.color_cells(sheet, row_numb)
                 for problem in self.dict_organizer[route][date_]:
                     if problem in self.problems:
                         sheet[f'{self.problems[problem]}{row_numb}'] = self.dict_organizer[route][date_][problem]
 
-    def append_to_report(self, sheet):
+    def append_to_report(self, sheet): # надо посмотреть
         """Добавляет и перезаписывает данные в старом отчёте 'report.xlsx'"""
+
         for row_numb in range(2, sheet.max_row + 1):
             route = sheet[f'B{row_numb}'].value
             date_str = sheet[f'A{row_numb}'].value
             date_ = datetime.strptime(date_str, '%d.%m.%Y') if type(date_str) == str else date_str
-            old_values = (sheet[f'C{row_numb}'].value, sheet[f'D{row_numb}'].value,
-                          sheet[f'E{row_numb}'].value)
+            old_values = (sheet[f'C{row_numb}'].value, sheet[f'E{row_numb}'].value,
+                          sheet[f'F{row_numb}'].value)
             values = (self.dict_organizer[route][date_]['plan'], self.dict_organizer[route][date_]['fact'],
-                      self.dict_axapta[route][date_],
+                      self.dict_axapta[route][date_]['fact_routes'], self.dict_axapta[route][date_]['plan_routes']
                       )
             sheet[f'C{row_numb}'].value = values[0]
-            sheet[f'D{row_numb}'].value = values[1]
-            sheet[f'E{row_numb}'].value = values[2]
+            sheet[f'D{row_numb}'].value = values[3]
+            sheet[f'E{row_numb}'].value = values[1]
+            sheet[f'F{row_numb}'].value = values[2]
             if self.check_difference(values):
                 self.color_cells(sheet, row_numb)
             if self.check_difference(old_values) and not self.check_difference(values):
@@ -150,11 +175,12 @@ class ReportCreater:
         else:
             filling = PatternFill(fill_type='none')
 
-        for cell in sheet[f'A{row}': f'E{row}'][0]:
+        for cell in sheet[f'A{row}': f'F{row}'][0]:
             cell.fill = filling
 
     def find_sheet(self, wb):
         """Находит лист в акте ОРГП за нужный период"""
+
         year, month = self.period
         period = f'{months[int(month)]} {int(year) % 100}'
         for sheet in wb.sheetnames:
@@ -163,6 +189,7 @@ class ReportCreater:
 
     def find_problems(self, route_code, sheet, row, flight_date):
         """Находит нарушения, причины срывов и заносит в 'dict_organizer' """
+
         values = [cell.value for cell in sheet[f'M{row}': f'O{row}'][0]]
         sum_flights = sum(int(val.value) for val in sheet[f'P{row}': f'Q{row}'][0] if val.value)
         sum_flights = 1 if not sum_flights else sum_flights
@@ -173,6 +200,7 @@ class ReportCreater:
 
     def add_value(self, route_code, sheet, row, flight_date):
         """Добавляет факт и план рейсов в 'dict_organizer'"""
+
         values = [self.get_int(cell.value) for cell in sheet[f'B{row}': f'F{row}'][0] if cell.column != 4]
         fact_value = int(values[1]) + int(values[3])
         plan_value = int(values[0]) + int(values[2])
@@ -202,6 +230,12 @@ class ReportCreater:
             return route_code.replace('Э', '')
         return route_code
 
+    @staticmethod
+    def get_routes():
+        global routes
+        with open(r'routes.json', encoding='utf-8') as f:
+            routes = json.load(f)
+
 
 try:
     for file in os.listdir():
@@ -209,7 +243,7 @@ try:
             rep_name = file
             break
     rep = ReportCreater(rep_name)
-    rep.read_axapta_report()
+    rep.read_tw_report()
     rep.get_organizer_data()
     rep.write_data()
 except Exception as err:
